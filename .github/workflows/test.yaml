@@ -1,0 +1,28 @@
+name: Test
+
+on:
+  push:
+    branches: ['*']
+    tags: ['!v*']
+  workflow_call: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout the repo
+      uses: actions/checkout@v5
+    - name: Lint the project
+      uses: golangci/golangci-lint-action@v9
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout the repo
+      uses: actions/checkout@v5
+    - name: Setup go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+    - name: Run the tests
+      run: go test ./provider
