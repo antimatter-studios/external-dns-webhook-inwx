@@ -2,12 +2,17 @@ package inwx
 
 import (
 	"fmt"
+	"time"
 
 	inwx "github.com/nrdcg/goinwx"
 )
 
+const zonesCacheTTL = 5 * time.Minute
+
 type ClientWrapper struct {
-	client *inwx.Client
+	client         *inwx.Client
+	zonesCache     []string
+	zonesCacheTime time.Time
 }
 
 type AbstractClientWrapper interface {
@@ -37,16 +42,34 @@ func (w *ClientWrapper) getRecords(domain string) (*[]inwx.NameserverRecord, err
 }
 
 func (w *ClientWrapper) getZones() (*[]string, error) {
+	if w.zonesCache != nil && time.Since(w.zonesCacheTime) < zonesCacheTTL {
+		zones := w.zonesCache
+		return &zones, nil
+	}
+
 	zones := []string{}
-	response, err := w.client.Nameservers.ListWithParams(&inwx.NameserverListRequest{
-		Domain: "*",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("no domain filter supplied, failed to list nameserver zones: %w", err)
+	page := 1
+	for {
+		response, err := w.client.Nameservers.ListWithParams(&inwx.NameserverListRequest{
+			Domain:    "*",
+			Page:      page,
+			PageLimit: 100,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list nameserver zones (page %d): %w", page, err)
+		}
+		for _, domain := range response.Domains {
+			zones = append(zones, domain.Domain)
+		}
+		if len(response.Domains) == 0 || len(zones) >= response.Count {
+			break
+		}
+		page++
 	}
-	for _, domain := range response.Domains {
-		zones = append(zones, domain.Domain)
-	}
+
+	w.zonesCache = zones
+	w.zonesCacheTime = time.Now()
+
 	return &zones, nil
 }
 
