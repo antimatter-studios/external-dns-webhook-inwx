@@ -38,7 +38,9 @@ func (w *ClientWrapper) getRecords(domain string) (*[]inwx.NameserverRecord, err
 
 func (w *ClientWrapper) getZones() (*[]string, error) {
 	zones := []string{}
-	response, err := w.client.Nameservers.ListWithParams(&inwx.NameserverListRequest{})
+	response, err := w.client.Nameservers.ListWithParams(&inwx.NameserverListRequest{
+		Domain: "*",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("no domain filter supplied, failed to list nameserver zones: %w", err)
 	}

@@ -21,11 +21,26 @@ type INWXProvider struct {
 }
 
 func NewINWXProvider(domainFilter *[]string, username string, password string, sandbox bool, logger *slog.Logger) *INWXProvider {
-	return &INWXProvider{
+	p := &INWXProvider{
 		client:       &ClientWrapper{client: inwx.NewClient(username, password, &inwx.ClientOptions{Sandbox: sandbox})},
 		domainFilter: endpoint.NewDomainFilter(*domainFilter),
 		logger:       logger,
 	}
+
+	if _, err := p.client.login(); err != nil {
+		logger.Error("startup zone check: failed to login", "err", err)
+	} else {
+		if zones, err := p.client.getZones(); err != nil {
+			logger.Error("startup zone check: failed to list zones", "err", err)
+		} else {
+			logger.Info("INWX zones available", "count", len(*zones), "zones", strings.Join(*zones, ", "))
+		}
+		if err := p.client.logout(); err != nil {
+			logger.Error("startup zone check: failed to logout", "err", err)
+		}
+	}
+
+	return p
 }
 
 func (p *INWXProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error) {
