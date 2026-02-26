@@ -28,6 +28,9 @@ func TestINWXProvider(t *testing.T) {
 	t.Run("EndpointZoneName", testEndpointZoneName)
 	t.Run("GetRecIDs", testGetRecIDs)
 	t.Run("ApplyChanges", testApplyChanges)
+	t.Run("CreateIsIdempotent", testCreateIsIdempotent)
+	t.Run("CreateUpsertsWhenDifferentContent", testCreateUpsertsWhenDifferentContent)
+	t.Run("UpdateFallsBackWhenOldRecordMissing", testUpdateFallsBackWhenOldRecordMissing)
 	t.Run("Records", testRecords)
 }
 
@@ -199,6 +202,101 @@ func testApplyChanges(t *testing.T) {
 	recs, err = w.getRecords("example.com")
 	assert.NoError(t, err)
 	assert.Equal(t, &[]inwx.NameserverRecord{}, recs)
+}
+
+func testCreateIsIdempotent(t *testing.T) {
+	w, p := NewINWXProviderWithMockClient(&[]string{"example.com"}, slog.Default())
+	w.CreateZone("example.com")
+
+	ep := &endpoint.Endpoint{
+		DNSName:    "foo.example.com",
+		Targets:    []string{"1.1.1.1"},
+		RecordType: "A",
+		RecordTTL:  60,
+	}
+
+	// First create
+	err := p.ApplyChanges(context.TODO(), &plan.Changes{
+		Create: []*endpoint.Endpoint{ep},
+	})
+	assert.NoError(t, err)
+
+	recs, _ := w.getRecords("example.com")
+	assert.Len(t, *recs, 1)
+	assert.Equal(t, "1.1.1.1", (*recs)[0].Content)
+
+	// Second create with same content should be a no-op (not error)
+	err = p.ApplyChanges(context.TODO(), &plan.Changes{
+		Create: []*endpoint.Endpoint{ep},
+	})
+	assert.NoError(t, err)
+
+	recs, _ = w.getRecords("example.com")
+	assert.Len(t, *recs, 1) // still just one record
+}
+
+func testCreateUpsertsWhenDifferentContent(t *testing.T) {
+	w, p := NewINWXProviderWithMockClient(&[]string{"example.com"}, slog.Default())
+	w.CreateZone("example.com")
+
+	ep1 := &endpoint.Endpoint{
+		DNSName:    "foo.example.com",
+		Targets:    []string{"1.1.1.1"},
+		RecordType: "A",
+		RecordTTL:  60,
+	}
+
+	// Create initial record
+	err := p.ApplyChanges(context.TODO(), &plan.Changes{
+		Create: []*endpoint.Endpoint{ep1},
+	})
+	assert.NoError(t, err)
+
+	// Create with different content should update instead of erroring
+	ep2 := &endpoint.Endpoint{
+		DNSName:    "foo.example.com",
+		Targets:    []string{"2.2.2.2"},
+		RecordType: "A",
+		RecordTTL:  60,
+	}
+	err = p.ApplyChanges(context.TODO(), &plan.Changes{
+		Create: []*endpoint.Endpoint{ep2},
+	})
+	assert.NoError(t, err)
+
+	recs, _ := w.getRecords("example.com")
+	assert.Len(t, *recs, 1)
+	assert.Equal(t, "2.2.2.2", (*recs)[0].Content)
+}
+
+func testUpdateFallsBackWhenOldRecordMissing(t *testing.T) {
+	w, p := NewINWXProviderWithMockClient(&[]string{"example.com"}, slog.Default())
+	w.CreateZone("example.com")
+
+	// old record doesn't exist in INWX, but external-dns sends an update
+	oldEp := &endpoint.Endpoint{
+		DNSName:    "foo.example.com",
+		Targets:    []string{"1.1.1.1"},
+		RecordType: "A",
+		RecordTTL:  60,
+	}
+	newEp := &endpoint.Endpoint{
+		DNSName:    "foo.example.com",
+		Targets:    []string{"2.2.2.2"},
+		RecordType: "A",
+		RecordTTL:  60,
+	}
+
+	// Should not error - should create the new record as fallback
+	err := p.ApplyChanges(context.TODO(), &plan.Changes{
+		UpdateOld: []*endpoint.Endpoint{oldEp},
+		UpdateNew: []*endpoint.Endpoint{newEp},
+	})
+	assert.NoError(t, err)
+
+	recs, _ := w.getRecords("example.com")
+	assert.Len(t, *recs, 1)
+	assert.Equal(t, "2.2.2.2", (*recs)[0].Content)
 }
 
 func testRecords(t *testing.T) {
