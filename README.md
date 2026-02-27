@@ -53,9 +53,20 @@ All options can be set via CLI flags or environment variables.
 
 ## Kubernetes deployment
 
-The recommended deployment pattern runs this webhook as a sidecar next to ExternalDNS. A full example manifest is provided in [`example/external-dns.yaml`](example/external-dns.yaml).
+This webhook runs as a sidecar container alongside ExternalDNS. There are two ways to deploy it.
 
-### 1. Create INWX credentials secret
+### Using the official ExternalDNS Helm chart (recommended)
+
+The [ExternalDNS Helm chart](https://github.com/kubernetes-sigs/external-dns/tree/master/charts/external-dns) has built-in support for webhook providers. This is the easiest way to get started.
+
+#### 1. Add the Helm repo
+
+```bash
+helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/
+helm repo update
+```
+
+#### 2. Create INWX credentials secret
 
 ```bash
 kubectl create namespace external-dns
@@ -65,61 +76,62 @@ kubectl -n external-dns create secret generic inwx-credentials \
   --from-literal=INWX_PASSWORD=your-password
 ```
 
-### 2. Deploy
+#### 3. Install with Helm
+
+Create a `values.yaml`:
 
 ```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  namespace: external-dns
-  name: external-dns
-spec:
-  strategy:
-    type: Recreate
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: external-dns
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: external-dns
-    spec:
-      serviceAccountName: external-dns
-      containers:
-      - name: external-dns
-        image: registry.k8s.io/external-dns/external-dns:v0.19.0
-        args:
-        - --source=ingress
-        - --source=service
-        - --provider=webhook
-      - name: inwx-webhook
-        image: ghcr.io/orbit-online/external-dns-inwx-webhook:latest
-        args:
-        - --domain-filter=example.com
-        env:
-        - name: INWX_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: inwx-credentials
-              key: INWX_USERNAME
-        - name: INWX_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: inwx-credentials
-              key: INWX_PASSWORD
+provider:
+  name: webhook
+  webhook:
+    image:
+      repository: ghcr.io/orbit-online/external-dns-inwx-webhook
+      tag: latest
+    env:
+    - name: INWX_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: inwx-credentials
+          key: INWX_USERNAME
+    - name: INWX_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: inwx-credentials
+          key: INWX_PASSWORD
+    args:
+    - --domain-filter=example.com
+    - --log.level=debug
 ```
 
-The full manifest including RBAC (ServiceAccount, ClusterRole, ClusterRoleBinding) is in `example/external-dns.yaml`.
-
-### 3. Verify
-
-Check that both containers are running and the webhook is connecting to INWX:
+Then install:
 
 ```bash
-kubectl -n external-dns logs deployment/external-dns -c inwx-webhook
+helm install external-dns external-dns/external-dns \
+  --namespace external-dns \
+  -f values.yaml
+```
+
+#### 4. Verify
+
+```bash
+kubectl -n external-dns logs deployment/external-dns -c webhook
 ```
 
 At startup, the webhook logs all available INWX zones — useful for verifying your domain filter configuration.
+
+### Using raw manifests
+
+A plain Kubernetes manifest (Deployment + RBAC) is provided in [`example/external-dns.yaml`](example/external-dns.yaml) if you prefer not to use Helm.
+
+```bash
+kubectl create namespace external-dns
+
+kubectl -n external-dns create secret generic inwx-credentials \
+  --from-literal=INWX_USERNAME=your-username \
+  --from-literal=INWX_PASSWORD=your-password
+
+kubectl -n external-dns apply -f example/external-dns.yaml
+```
 
 ## Running locally
 
