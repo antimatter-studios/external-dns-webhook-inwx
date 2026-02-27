@@ -1,4 +1,4 @@
-module github.com/orbit-online/external-dns-inwx-webhook
+module github.com/antimatter-studios/external-dns-webhook-inwx
 
 go 1.25.4
 

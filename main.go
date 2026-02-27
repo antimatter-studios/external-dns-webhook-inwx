@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	provider "github.com/orbit-online/external-dns-inwx-webhook/provider"
+	provider "github.com/antimatter-studios/external-dns-webhook-inwx/provider"
 	"github.com/prometheus/client_golang/prometheus"
 	cversion "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -75,11 +75,11 @@ func main() {
 	var wg errgroup.Group
 
 	wg.Go(func() error {
-		logger.Info("Started external-dns-inwx-webhook metrics server", "address", metricsListenAddr)
+		logger.Info("Started external-dns-webhook-inwx metrics server", "address", metricsListenAddr)
 		return web.ListenAndServe(&metricsServer, &metricsFlags, logger)
 	})
 	wg.Go(func() error {
-		logger.Info("Started external-dns-inwx-webhook webhook server", "address", listenAddr)
+		logger.Info("Started external-dns-webhook-inwx webhook server", "address", listenAddr)
 		return web.ListenAndServe(&webhookServer, &webhookFlags, logger)
 	})
 
@@ -113,7 +113,7 @@ func buildMetricsServer(registry prometheus.Gatherer, logger *slog.Logger) *http
 
 	// Add index
 	landingConfig := web.LandingConfig{
-		Name:        "external-dns-inwx-webhook",
+		Name:        "external-dns-webhook-inwx",
 		Description: "external-dns webhook provider for INWX",
 		Version:     version.Info(),
 		Links: []web.LandingLinks{

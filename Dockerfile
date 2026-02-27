@@ -6,5 +6,5 @@ RUN go build
 
 FROM alpine:3.22
 
-COPY --from=builder /app/external-dns-inwx-webhook /
-ENTRYPOINT ["/external-dns-inwx-webhook"]
+COPY --from=builder /app/external-dns-webhook-inwx /
+ENTRYPOINT ["/external-dns-webhook-inwx"]

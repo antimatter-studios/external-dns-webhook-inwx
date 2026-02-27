@@ -65,7 +65,7 @@ spec:
         - --source=service
         - --provider=webhook
       - name: external-dns-webhook-provider
-        image: ghcr.io/orbit-online/external-dns-inwx-webhook:latest
+        image: ghcr.io/antimatter-studios/external-dns-webhook-inwx:latest
         args:
         - --log.level=debug
         - --domain-filter=YOUR_DOMAIN

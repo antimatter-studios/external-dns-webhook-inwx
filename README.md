@@ -1,4 +1,4 @@
-# external-dns-inwx-webhook
+# external-dns-webhook-inwx
 
 An [ExternalDNS](https://github.com/kubernetes-sigs/external-dns) webhook provider for [INWX](https://www.inwx.com/) (InterNetworX). This plugin lets ExternalDNS automatically manage DNS records hosted at INWX based on your Kubernetes Ingress, Service, and DNSEndpoint resources.
 
@@ -18,7 +18,7 @@ The plugin runs as a **sidecar container** alongside ExternalDNS in the same Pod
 Pre-built multi-arch images (linux/amd64, linux/arm64) are published to GitHub Container Registry:
 
 ```
-ghcr.io/orbit-online/external-dns-inwx-webhook
+ghcr.io/antimatter-studios/external-dns-webhook-inwx
 ```
 
 Images are tagged with semantic versions (e.g. `v1.0.0`) and `latest` on every push to `main`.
@@ -27,13 +27,13 @@ Images are tagged with semantic versions (e.g. `v1.0.0`) and `latest` on every p
 
 ```bash
 # requires Go 1.25+
-go build -o external-dns-inwx-webhook .
+go build -o external-dns-webhook-inwx .
 ```
 
 Or with Docker:
 
 ```bash
-docker build -t external-dns-inwx-webhook .
+docker build -t external-dns-webhook-inwx .
 ```
 
 ## Configuration
@@ -85,7 +85,7 @@ provider:
   name: webhook
   webhook:
     image:
-      repository: ghcr.io/orbit-online/external-dns-inwx-webhook
+      repository: ghcr.io/antimatter-studios/external-dns-webhook-inwx
       tag: latest
     env:
     - name: INWX_USERNAME
@@ -140,7 +140,7 @@ export INWX_USERNAME=your-username
 export INWX_PASSWORD=your-password
 
 # Use sandbox mode for testing
-./external-dns-inwx-webhook --inwx-sandbox --domain-filter=example.com --log.level=debug
+./external-dns-webhook-inwx --inwx-sandbox --domain-filter=example.com --log.level=debug
 ```
 
 The webhook server will be available at `http://localhost:8888` and metrics at `http://localhost:8080`.
