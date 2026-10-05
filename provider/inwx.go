@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	inwx "github.com/nrdcg/goinwx"
@@ -68,7 +69,7 @@ func (p *INWXProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error
 		}
 		for _, rec := range *records {
 			name := fmt.Sprintf("%s.%s", rec.Name, zone)
-			ep := endpoint.NewEndpointWithTTL(name, rec.Type, endpoint.TTL(rec.TTL), rec.Content)
+			ep := endpoint.NewEndpointWithTTL(name, rec.Type, endpoint.TTL(rec.TTL), targetOf(rec))
 			endpoints = append(endpoints, ep)
 		}
 	}
@@ -152,11 +153,12 @@ func (p *INWXProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) 
 			existing := findRecordsByNameAndType(zone, recordsCache[zone], ep.DNSName, ep.RecordType)
 
 			rec := &inwx.NameserverRecordRequest{
-				Domain:  zone,
-				Name:    name,
-				Type:    ep.RecordType,
-				TTL:     int(ep.RecordTTL),
-				Content: target,
+				Domain:   zone,
+				Name:     name,
+				Type:     ep.RecordType,
+				TTL:      int(ep.RecordTTL),
+				Content:  contentOf(ep.RecordType, target),
+				Priority: priorityOf(ep.RecordType, target),
 			}
 
 			// If exact record (same content) already exists, skip
@@ -220,11 +222,12 @@ func (p *INWXProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) 
 						continue
 					}
 					rec := &inwx.NameserverRecordRequest{
-						Domain:  zone,
-						Name:    name,
-						Type:    newEp.RecordType,
-						TTL:     int(newEp.RecordTTL),
-						Content: target,
+						Domain:   zone,
+						Name:     name,
+						Type:     newEp.RecordType,
+						TTL:      int(newEp.RecordTTL),
+						Content:  contentOf(newEp.RecordType, target),
+						Priority: priorityOf(newEp.RecordType, target),
 					}
 					if err = p.client.createRecord(rec); err != nil {
 						if isObjectExistsError(err) {
@@ -248,11 +251,12 @@ func (p *INWXProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) 
 					}
 				case j >= len(oldEp.Targets):
 					rec := &inwx.NameserverRecordRequest{
-						Domain:  zone,
-						Name:    name,
-						Type:    newEp.RecordType,
-						TTL:     int(newEp.RecordTTL),
-						Content: newEp.Targets[j],
+						Domain:   zone,
+						Name:     name,
+						Type:     newEp.RecordType,
+						TTL:      int(newEp.RecordTTL),
+						Content:  contentOf(newEp.RecordType, newEp.Targets[j]),
+						Priority: priorityOf(newEp.RecordType, newEp.Targets[j]),
 					}
 					if err = p.client.createRecord(rec); err != nil {
 						if isObjectExistsError(err) {
@@ -265,11 +269,12 @@ func (p *INWXProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) 
 					}
 				default:
 					rec := &inwx.NameserverRecordRequest{
-						Domain:  zone,
-						Name:    name,
-						Type:    newEp.RecordType,
-						TTL:     int(oldEp.RecordTTL),
-						Content: newEp.Targets[j],
+						Domain:   zone,
+						Name:     name,
+						Type:     newEp.RecordType,
+						TTL:      int(oldEp.RecordTTL),
+						Content:  contentOf(newEp.RecordType, newEp.Targets[j]),
+						Priority: priorityOf(newEp.RecordType, newEp.Targets[j]),
 					}
 					if err = p.client.updateRecord(recIDs[j], rec); err != nil {
 						errs = append(errs, err)
@@ -334,7 +339,7 @@ func getRecIDs(zone string, records *[]inwx.NameserverRecord, ep endpoint.Endpoi
 	recIDs := []string{}
 	for _, target := range ep.Targets {
 		for _, record := range *records {
-			if ep.RecordType == record.Type && target == record.Content && record.Name == targetName {
+			if ep.RecordType == record.Type && target == targetOf(record) && record.Name == targetName {
 				recIDs = append(recIDs, record.ID)
 			}
 		}
@@ -360,7 +365,7 @@ func findRecordsByNameAndType(zone string, records *[]inwx.NameserverRecord, dns
 // findExactRecord returns the ID of a record matching the given content, or empty string if not found.
 func findExactRecord(records []inwx.NameserverRecord, content string) string {
 	for _, rec := range records {
-		if rec.Content == content {
+		if targetOf(rec) == content {
 			return rec.ID
 		}
 	}
@@ -388,4 +393,37 @@ func getZone(zones *[]string, endpoint *endpoint.Endpoint) (string, error) {
 		}
 	}
 	return matchZoneName, err
+}
+
+// ExternalDNS writes an MX target as "<preference> <host>". INWX keeps the preference in a field of
+// its own and rejects the combined form with "(2005) Parameter value syntax error", so the two are
+// split on the way out and joined on the way back, where ExternalDNS compares them.
+func contentOf(recordType, target string) string {
+	if recordType == endpoint.RecordTypeMX {
+		if pref, host, ok := strings.Cut(target, " "); ok {
+			if _, err := strconv.Atoi(pref); err == nil {
+				return host
+			}
+		}
+	}
+	return target
+}
+
+func priorityOf(recordType, target string) int {
+	if recordType == endpoint.RecordTypeMX {
+		if pref, _, ok := strings.Cut(target, " "); ok {
+			if n, err := strconv.Atoi(pref); err == nil {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+// targetOf is a stored record as ExternalDNS spells it.
+func targetOf(rec inwx.NameserverRecord) string {
+	if rec.Type == endpoint.RecordTypeMX {
+		return fmt.Sprintf("%d %s", rec.Priority, rec.Content)
+	}
+	return rec.Content
 }

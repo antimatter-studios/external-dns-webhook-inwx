@@ -380,3 +380,46 @@ func testRecords(t *testing.T) {
 	assert.Equal(t, []*endpoint.Endpoint{}, ep)
 	assert.NoError(t, err)
 }
+
+func TestMXRecords(t *testing.T) {
+	w, p := NewINWXProviderWithMockClient(&[]string{"bar.org"}, slog.Default())
+	w.CreateZone("bar.org")
+	mx := &endpoint.Endpoint{DNSName: "bar.org", Targets: endpoint.Targets{"10 mail.bar.org"}, RecordType: endpoint.RecordTypeMX, RecordTTL: 3600}
+
+	if err := p.ApplyChanges(context.Background(), &plan.Changes{Create: []*endpoint.Endpoint{mx}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	recs, _ := w.getRecords("bar.org")
+	if len(*recs) != 1 || (*recs)[0].Content != "mail.bar.org" || (*recs)[0].Priority != 10 {
+		t.Fatalf("MX must reach INWX as content mail.bar.org, priority 10; got %+v", *recs)
+	}
+
+	eps, err := p.Records(context.Background())
+	if err != nil {
+		t.Fatalf("records: %v", err)
+	}
+	var got []string
+	for _, ep := range eps {
+		if ep.RecordType == endpoint.RecordTypeMX {
+			got = append(got, ep.Targets...)
+		}
+	}
+	if len(got) != 1 || got[0] != "10 mail.bar.org" {
+		t.Fatalf("MX must read back as ExternalDNS spells it, \"10 mail.bar.org\"; got %v", got)
+	}
+
+	// applying the same endpoint again finds the existing record instead of creating a second
+	if err := p.ApplyChanges(context.Background(), &plan.Changes{Create: []*endpoint.Endpoint{mx}}); err != nil {
+		t.Fatalf("second create: %v", err)
+	}
+	recs, _ = w.getRecords("bar.org")
+	if len(*recs) != 1 {
+		t.Fatalf("a repeated MX create must not duplicate the record; got %d", len(*recs))
+	}
+}
+
+func TestNonMXTargetsAreUnchanged(t *testing.T) {
+	if contentOf(endpoint.RecordTypeTXT, "10 not a preference") != "10 not a preference" || priorityOf(endpoint.RecordTypeA, "10 x") != 0 {
+		t.Fatal("only MX targets are split")
+	}
+}
